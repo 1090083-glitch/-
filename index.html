@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>世界計畫風 節奏遊戲</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;700;900&display=swap');
+        
+        :root {
+            --primary-color: #33ccff;
+            --secondary-color: #ff66aa;
+            --background-color: #f0f8ff;
+            --dark-text: #333;
+        }
+        
+        #fever-text {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 4rem; font-weight: 900;
+            color: white;
+            text-shadow: 0 0 10px var(--secondary-color), 0 0 20px var(--secondary-color), 0 0 30px #fff;
+            opacity: 0; transition: all 0.5s ease-out;
+            z-index: 200; pointer-events: none;
+        }
+        #fever-text.show {
+            transform: translate(-50%, -50%) scale(1.2);
+            opacity: 1;
+        }
+
+        #start-screen, #end-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            color: var(--dark-text); z-index: 100; transition: opacity 0.5s;
+            text-align: center; padding: 2rem;
+        }
+
+        #start-screen.hidden, #end-screen.hidden { opacity: 0; pointer-events: none; }
+
+        #start-screen h1, #end-screen h2 {
+            font-size: 2.5rem; font-weight: 900; margin-bottom: 1rem;
+            color: var(--primary-color);
+            text-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        #end-screen h2.fail { color: #ff6b6b; }
+
+        .btn {
+            padding: 0.8rem 3rem; border-radius: 9999px; font-weight: bold;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border: none; cursor: pointer;
+            background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+            color: white; text-transform: uppercase;
+        }
+        .btn:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 8px 25px rgba(51, 204, 255, 0.3); }
+
+        #game-ui {
+            position: absolute; top: 1.5rem; left: 1.5rem; right: 1.5rem;
+            display: flex; justify-content: space-between; align-items: center;
+            color: var(--dark-text); z-index: 50;
+        }
+        
+        #score-board, #combo-display { font-size: 1.5rem; font-weight: bold; }
+        #combo-display { color: var(--secondary-color); transition: transform 0.1s ease-out; }
+        #combo-display.popping { transform: scale(1.3); }
+        #combo-display span { display: inline-block; margin-left: 0.5rem; }
+
+        #life-bar-container {
+            position: absolute; top: 4.5rem; left: 50%;
+            transform: translateX(-50%);
+            width: 80%; height: 10px; background-color: rgba(0,0,0,0.1);
+            border-radius: 5px; z-index: 50;
+        }
+        #life-bar {
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, #a6ffcb, #12d8fa, #1fa2ff);
+            border-radius: 5px; transition: width 0.2s ease-out;
+        }
+        
+        #fever-bar-container {
+            position: absolute; top: 6rem; left: 50%;
+            transform: translateX(-50%);
+            width: 80%; height: 8px; background-color: rgba(0,0,0,0.1);
+            border-radius: 5px; z-index: 50;
+        }
+        #fever-bar {
+            width: 0%; height: 100%;
+            background: linear-gradient(90deg, #ff9a8b, #ff66aa);
+            border-radius: 5px; transition: width 0.1s linear;
+        }
+
+        .lane { flex: 1; position: relative; border-left: 1px solid rgba(51, 204, 255, 0.2); }
+        .lane:last-child { border-right: 1px solid rgba(51, 204, 255, 0.2); }
+        #lane-container { display: flex; height: 100%; }
+
+        #target-line {
+            position: absolute; bottom: 80px; left: 0; width: 100%; height: 4px;
+            background-color: var(--primary-color); z-index: 20;
+            box-shadow: 0 0 15px var(--primary-color);
+            transition: all 0.1s;
+        }
+
+        .note {
+            position: absolute; width: 70px; height: 25px;
+            background: linear-gradient(180deg, #1fa2ff, #12d8fa);
+            border: 2px solid white;
+            border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 10;
+        }
+        
+        .note.held { background: linear-gradient(180deg, #ff66aa, #ff9a8b); }
+
+        .note.flick { background: linear-gradient(180deg, #fbc2eb, #a6c1ee); }
+        .note.flick::after {
+            content: '▲'; font-size: 18px; color: white;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .note-tail {
+            position: absolute; width: 60px;
+            background-color: rgba(255, 102, 170, 0.7);
+            border-radius: 10px; z-index: 9; transform-origin: bottom;
+        }
+
+        #feedback-text {
+            position: absolute; bottom: 150px; left: 50%; font-size: 2.5rem; font-weight: 900;
+            opacity: 0; z-index: 30; transition: opacity 0.3s, transform 0.3s;
+            transform: translateX(-50%) scale(0.5);
+        }
+        #feedback-text.show { opacity: 1; transform: translateX(-50%) scale(1); }
+
+        #input-buttons { position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; display: flex; z-index: 40; }
+        .lane-btn { flex: 1; background-color: transparent; border: none; cursor: pointer; position: relative; }
+        .lane-btn:active::after, .lane-btn.key-pressed::after {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(circle at bottom, rgba(51, 204, 255, 0.4) 0%, transparent 60%);
+            animation: hit-effect 0.2s forwards;
+        }
+        @keyframes hit-effect { from { opacity: 1; } to { opacity: 0; } }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div id="game-container" class="relative w-full max-w-md h-[80vh] min-h-[600px] bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div id="start-screen">
+            <h1>RHYTHM STAGE</h1>
+            <p class="mb-8">準備好跟上節拍！使用 D, F, J, K 鍵來打擊音符！</p>
+            <button id="start-btn" class="btn">開始演出</button>
+        </div>
+
+        <div id="end-screen" class="hidden">
+            <h2 id="end-title">演出結束！</h2>
+            <p class="text-xl mb-4">最終分數: <span id="final-score-display" class="font-bold">0</span></p>
+            <button id="restart-btn" class="btn">再次演出</button>
+        </div>
+        
+        <div id="countdown-text" class="absolute inset-0 flex items-center justify-center text-white text-9xl font-black z-50 hidden" style="text-shadow: 0 0 20px var(--primary-color);"></div>
+
+        <div id="game-ui">
+            <div id="score-board">分數: <span id="score-display">0</span></div>
+            <div id="combo-display" class="hidden">COMBO<span>0</span></div>
+        </div>
+        <div id="life-bar-container">
+            <div id="life-bar"></div>
+        </div>
+        <div id="fever-bar-container">
+            <div id="fever-bar"></div>
+        </div>
+        <div id="fever-text">FEVER TIME!</div>
+
+        <div id="lane-container">
+            <div class="lane" data-lane="0"></div>
+            <div class="lane" data-lane="1"></div>
+            <div class="lane" data-lane="2"></div>
+            <div class="lane" data-lane="3"></div>
+        </div>
+        <div id="target-line"></div>
+        <div id="input-buttons">
+            <button class="lane-btn" data-lane="0"></button>
+            <button class="lane-btn" data-lane="1"></button>
+            <button class="lane-btn" data-lane="2"></button>
+            <button class="lane-btn" data-lane="3"></button>
+        </div>
+        <div id="feedback-text"></div>
+    </div>
+    
+    <script>
+        // DOM elements
+        const UIElements = {
+            startScreen: document.getElementById('start-screen'),
+            endScreen: document.getElementById('end-screen'),
+            startBtn: document.getElementById('start-btn'),
+            restartBtn: document.getElementById('restart-btn'),
+            gameContainer: document.getElementById('game-container'),
+            lanes: document.querySelectorAll('.lane'),
+            laneBtns: document.querySelectorAll('.lane-btn'),
+            scoreDisplay: document.getElementById('score-display'),
+            finalScoreDisplay: document.getElementById('final-score-display'),
+            targetLine: document.getElementById('target-line'),
+            feedbackText: document.getElementById('feedback-text'),
+            countdownText: document.getElementById('countdown-text'),
+            comboDisplay: document.getElementById('combo-display'),
+            comboCountSpan: document.getElementById('combo-display').querySelector('span'),
+            lifeBar: document.getElementById('life-bar'),
+            endTitle: document.getElementById('end-title'),
+            feverBar: document.getElementById('fever-bar'),
+            feverText: document.getElementById('fever-text'),
+        };
+
+        // Game state
+        let gameState = {
+            score: 0, combo: 0, life: 1000,
+            fever: 0, isFever: false,
+            isPlaying: false, isGameEnded: false,
+            notes: [], activeHolds: { 0: null, 1: null, 2: null, 3: null },
+            animationFrameId: null, lastUpdateTime: null,
+        };
+        const MAX_LIFE = 1000;
+        const MAX_FEVER = 200;
+        
+        // Game dynamics
+        let gameHeight, noteDropSpeed; 
+        const noteDropTime = 1600; // ms, 難度提升：下落速度加快 (1800 -> 1600)
+
+        // Music setup
+        const hitSound = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "sine" }, envelope: { attack: 0.005, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination();
+        const synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "fmsquare" }, envelope: { attack: 0.05, decay: 0.2, sustain: 0.3, release: 1 } }).toDestination();
+        const preGameTouchSound = new Tone.Synth({ oscillator: { type: "triangle" }, volume: -10, envelope: { attack: 0.005, decay: 0.05, sustain: 0, release: 0.1 } }).toDestination();
+        
+        const transport = Tone.getTransport();
+        
+        // --- EXPERT Chart (More density, fixed width) ---
+        const songData = [
+            // Section 1 (Intro)
+            { time: "0:0:0", note: "C4", lane: 0 }, { time: "0:2:0", note: "E4", lane: 1 },
+            { time: "1:0:0", note: "G4", lane: 2 }, { time: "1:2:0", note: "C5", lane: 3 },
+            { time: "2:0:0", note: "D4", lane: 0, type: 'flick' }, { time: "2:2:0", note: "F4", lane: 2 },
+            { time: "3:0:0", note: "E4", lane: 1, type: 'long', holdDuration: '2n' },
+            { time: "4:0:0", note: "G4", lane: 3 }, { time: "4:2:0", note: "G4", lane: 2 },
+            { time: "5:0:0", note: "A4", lane: 1 }, { time: "5:2:0", note: "A4", lane: 0 },
+            { time: "6:0:0", note: "B4", lane: 2, type: 'flick' }, { time: "6:2:0", note: "B4", lane: 3, type: 'flick' },
+            
+            // Section 2 (Verse - building up)
+            { time: "7:0:0", note: "C5", lane: 0, type: 'long', holdDuration: '2n' },
+            { time: "7:0:0", note: "E5", lane: 3, type: 'long', holdDuration: '2n' },
+            { time: "8:0:0", note: "D5", lane: 1 }, { time: "8:1:0", note: "D5", lane: 2 }, { time: "8:2:0", note: "C5", lane: 2 },
+            { time: "9:0:0", note: "B4", lane: 0 }, { time: "9:1:0", note: "A4", lane: 1 },
+            { time: "9:2:0", note: "G4", lane: 2 }, { time: "9:3:0", note: "A4", lane: 3 },
+            { time: "10:0:0", note: "B4", lane: 2 }, { time: "10:2:0", note: "C5", lane: 1, type: 'flick' },
+            { time: "11:0:0", note: "D5", lane: 0 }, { time: "11:2:0", note: "E5", lane: 3 },
+            { time: "12:0:0", note: "C5", lane: 1, type: 'long', holdDuration: '1n' },
+            { time: "13:0:0", note: "G4", lane: 2 }, { time: "13:0:0", note: "B4", lane: 0 },
+            { time: "13:2:0", note: "A4", lane: 3 }, { time: "13:2:0", note: "C5", lane: 1 },
+            
+            // Section 3 (Pre-Chorus - Adding density)
+            { time: "14:0:0", note: "F4", lane: 2 }, { time: "14:1:0", note: "F4", lane: 1 }, { time: "14:2:0", note: "G4", lane: 1 },
+            { time: "15:0:0", note: "C5", lane: 0, type: 'long', holdDuration: '1n' },
+            { time: "15:0:0", note: "E5", lane: 2, type: 'long', holdDuration: '1n' },
+            { time: "16:0:0", note: "G5", lane: 1 }, { time: "16:1:0", note: "A5", lane: 2 }, { time: "16:2:0", note: "F5", lane: 2 },
+            { time: "17:0:0", note: "E5", lane: 0 }, { time: "17:2:0", note: "D5", lane: 3 },
+            { time: "18:0:0", note: "C5", lane: 1, type: 'flick' }, { time: "18:2:0", note: "C5", lane: 2, type: 'flick' },
+            
+            // Section 4 (Chorus - Trills and doubles)
+            { time: "19:0:0", note: "G4", lane: 0, type: 'long', holdDuration: '2n' },
+            { time: "20:0:0", note: "A4", lane: 2 }, { time: "20:2:0", note: "B4", lane: 3 },
+            { time: "21:0:0", note: "C5", lane: 1 }, { time: "21:2:0", note: "B4", lane: 2 },
+            { time: "22:0:0", note: "A4", lane: 0 }, { time: "22:1:0", note: "B4", lane: 1 },
+            { time: "22:2:0", note: "C5", lane: 2 }, { time: "22:3:0", note: "D5", lane: 3, type: 'flick' },
+            { time: "23:0:0", note: "E5", lane: 1, type: 'long', holdDuration: '2n' },
+            { time: "23:0:0", note: "G4", lane: 2, type: 'long', holdDuration: '2n' },
+            
+            // Section 5 (Bridge - 16th note bursts)
+            { time: "24:0:0", note: "C5", lane: 0 }, { time: "24:1:0", note: "D5", lane: 1 },
+            { time: "24:2:0", note: "C5", lane: 2 }, { time: "24:3:0", note: "B4", lane: 3 },
+            { time: "25:0:0", note: "A4", lane: 0 }, { time: "25:1:0", note: "B4", lane: 1 },
+            { time: "25:2:0", note: "C5", lane: 2 }, { time: "25:3:0", note: "D5", lane: 3 },
+            { time: "26:0:0", note: "E5", lane: 0, type: 'flick' }, { time: "26:0:0", note: "G5", lane: 3, type: 'flick' },
+            { time: "26:2:0", note: "D5", lane: 1 }, { time: "26:2:0", note: "F5", lane: 2 },
+            
+            // Section 6 (Climax - Harder patterns)
+            { time: "27:0:0", note: "C5", lane: 0, type: 'long', holdDuration: '2n' },
+            { time: "28:0:0", note: "B4", lane: 3 }, { time: "28:2:0", note: "A4", lane: 2 },
+            { time: "29:0:0", note: "G4", lane: 1 }, { time: "29:2:0", note: "A4", lane: 0 },
+            { time: "30:0:0", note: "C5", lane: 1, type: 'long', holdDuration: '1n' },
+            { time: "30:0:0", note: "E5", lane: 2, type: 'long', holdDuration: '1n' },
+            { time: "31:0:0", note: "G5", lane: 0 }, { time: "31:1:0", note: "G5", lane: 1 },
+            { time: "31:2:0", note: "G5", lane: 2 }, { time: "31:3:0", note: "G5", lane: 3, type: 'flick' },
+            
+            // Section 7 (Final Rush)
+            { time: "32:0:0", note: "A5", lane: 3 }, { time: "32:1:0", note: "G5", lane: 2 },
+            { time: "32:2:0", note: "F5", lane: 1 }, { time: "32:3:0", note: "E5", lane: 0, type: 'flick' },
+            { time: "33:0:0", note: "B5", lane: 0, type: 'long', holdDuration: '2n' },
+            { time: "33:0:0", note: "G5", lane: 3, type: 'long', holdDuration: '2n' },
+            { time: "34:0:0", note: "C6", lane: 1, type: 'flick' }, { time: "34:2:0", note: "B5", lane: 2 },
+            { time: "35:0:0", note: "A5", lane: 1, type: 'long', holdDuration: '1n' },
+            
+            // Section 8 (Outro)
+            { time: "36:0:0", note: "G5", lane: 2 }, { time: "36:2:0", note: "F5", lane: 3 },
+            { time: "37:0:0", note: "E5", lane: 0 }, { time: "37:0:0", note: "G5", lane: 2 },
+            { time: "37:2:0", note: "F5", lane: 1 }, { time: "37:2:0", note: "A5", lane: 3 },
+            { time: "38:0:0", note: "G5", lane: 0, type: 'long', holdDuration: '1n' },
+            { time: "39:0:0", note: "G5", lane: 1 }, { time: "39:1:0", note: "A5", lane: 2 }, { time: "39:2:0", note: "B5", lane: 3 }, { time: "39:3:0", note: "C6", lane: 0 },
+            
+            // Final rapid double trills
+            { time: "40:0:0", note: "C5", lane: 0 }, { time: "40:0:0", note: "E5", lane: 2 },
+            { time: "40:1:0", note: "D5", lane: 1 }, { time: "40:1:0", note: "F5", lane: 3 },
+            { time: "40:2:0", note: "C5", lane: 0 }, { time: "40:2:0", note: "E5", lane: 2 },
+            { time: "40:3:0", note: "D5", lane: 1 }, { time: "40:3:0", note: "F5", lane: 3 },
+            
+            { time: "41:0:0", note: "G5", lane: 0, type: 'flick' }, { time: "41:0:0", note: "C6", lane: 3, type: 'flick' },
+            { time: "42:0:0", note: "C6", lane: 0, type: 'long', holdDuration: '2n' },
+            { time: "42:0:0", note: "G5", lane: 3, type: 'long', holdDuration: '2n' }
+        ];
+        
+        let songEndTime = 0;
+        let beatLoop = null;
+
+        // Game Logic
+        async function startGame() {
+            UIElements.startScreen.classList.add('hidden');
+            UIElements.endScreen.classList.add('hidden');
+            gameHeight = UIElements.gameContainer.offsetHeight;
+            noteDropSpeed = gameHeight / noteDropTime;
+
+            Object.assign(gameState, {
+                score: 0, combo: 0, life: MAX_LIFE,
+                fever: 0, isFever: false,
+                notes: [], activeHolds: { 0: null, 1: null, 2: null, 3: null },
+                isPlaying: true, isGameEnded: false,
+                lastUpdateTime: null // <-- 穩定性關鍵
+            });
+            updateUI();
+            UIElements.gameContainer.classList.remove('fever-active');
+            
+            await Tone.start();
+            transport.bpm.value = 182; // 難度提升：BPM 175 -> 182
+            document.querySelectorAll('.note, .note-tail').forEach(el => el.remove());
+            
+            countdown(startMusicAndNotes);
+        }
+        
+        function countdown(callback) {
+            UIElements.countdownText.classList.remove('hidden');
+            let count = 3;
+            const animateCount = () => {
+                UIElements.countdownText.textContent = count > 0 ? count : 'GO!';
+                UIElements.countdownText.style.transform = 'scale(0.5)';
+                UIElements.countdownText.style.opacity = '0';
+                setTimeout(() => {
+                    UIElements.countdownText.style.transform = 'scale(1)';
+                    UIElements.countdownText.style.opacity = '1';
+                }, 50);
+
+                if (count > 0) {
+                    count--;
+                    setTimeout(animateCount, 1000);
+                } else {
+                    setTimeout(() => {
+                        UIElements.countdownText.classList.add('hidden');
+                        callback();
+                    }, 1000);
+                }
+            };
+            animateCount();
+        }
+
+        function startMusicAndNotes() {
+            transport.cancel();
+            if (beatLoop) beatLoop.stop(0);
+            songEndTime = 0;
+            
+            songData.forEach(noteInfo => {
+                const spawnTimeSeconds = Tone.Time(noteInfo.time).toSeconds();
+                transport.scheduleOnce(() => createNoteElement(noteInfo), spawnTimeSeconds);
+                if (noteInfo.note) {
+                    synth.triggerAttackRelease(noteInfo.note, noteInfo.duration || "8n", noteInfo.time);
+                }
+                songEndTime = Math.max(songEndTime, spawnTimeSeconds + Tone.Time(noteInfo.duration || "8n").toSeconds());
+            });
+
+            transport.start();
+            gameState.animationFrameId = requestAnimationFrame(animate);
+            transport.scheduleOnce(endGame, songEndTime + 2);
+        }
+
+        function createNoteElement(noteInfo) {
+            if (!gameState.isPlaying) return;
+            const noteElement = document.createElement('div');
+            noteElement.className = 'note';
+            if (noteInfo.type === 'flick') noteElement.classList.add('flick');
+            
+            const noteWidth = 70; // 固定寬度
+
+            const laneElement = UIElements.lanes[noteInfo.lane];
+            const xPosition = laneElement.offsetLeft + (laneElement.offsetWidth - noteWidth) / 2;
+            
+            noteElement.style.left = `${xPosition}px`;
+            noteElement.style.top = `-25px`;
+            UIElements.gameContainer.appendChild(noteElement);
+
+            let tailElement = null;
+            if (noteInfo.type === 'long') {
+                tailElement = document.createElement('div');
+                tailElement.className = 'note-tail';
+                
+                const tailWidth = 60; // 固定寬度
+                
+                const tailHeight = (Tone.Time(noteInfo.holdDuration).toSeconds() * 1000) * noteDropSpeed;
+                tailElement.style.height = `${tailHeight}px`;
+                tailElement.style.left = `${laneElement.offsetLeft + (laneElement.offsetWidth - tailWidth) / 2}px`;
+                tailElement.style.top = `${-25 - tailHeight + 12.5}px`;
+                UIElements.gameContainer.appendChild(tailElement);
+            }
+
+            gameState.notes.push({ 
+                element: noteElement, 
+                tailElement: tailElement, 
+                y: -25, 
+                noteData: noteInfo, 
+                isHit: false
+            });
+        }
+        
+        function animate(currentTime) {
+            if (!gameState.isPlaying) return;
+
+            if (gameState.lastUpdateTime === null) { 
+                gameState.lastUpdateTime = currentTime;
+            }
+            
+            const deltaTime = currentTime - gameState.lastUpdateTime;
+            gameState.lastUpdateTime = currentTime; 
+            
+            const dropDistance = noteDropSpeed * deltaTime;
+            const targetLineY = UIElements.targetLine.offsetTop;
+            const missThreshold = 80;
+
+            gameState.notes.forEach((note) => {
+                if (!note.isHit) {
+                    note.y += dropDistance;
+                    note.element.style.transform = `translateY(${note.y}px)`;
+                    if(note.tailElement) note.tailElement.style.transform = `translateY(${note.y + 25}px)`;
+                    
+                    if ((note.y + 12.5) > (targetLineY + missThreshold)) {
+                        note.isHit = true;
+                        note.element.remove();
+                        if (note.tailElement) note.tailElement.remove();
+                        handleJudgement('Miss');
+                    }
+                }
+            });
+
+            Object.values(gameState.activeHolds).forEach(heldNote => {
+                if (heldNote) {
+                    const newHeight = heldNote.tailElement.offsetHeight - dropDistance;
+                    heldNote.tailElement.style.height = `${Math.max(0, newHeight)}px`;
+                }
+            });
+            
+            gameState.notes = gameState.notes.filter(note => !note.isHit);
+            gameState.animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function processHit(hitLane) {
+            if (!gameState.isPlaying) return;
+            const targetLineY = UIElements.targetLine.offsetTop;
+            const notesInLane = gameState.notes.filter(note => note.noteData.lane === hitLane && !note.isHit);
+
+            if (notesInLane.length > 0) {
+                const closestNote = notesInLane.reduce((prev, curr) => 
+                    (Math.abs((prev.y + 12.5) - targetLineY) < Math.abs((curr.y + 12.5) - targetLineY)) ? prev : curr
+                );
+                
+                const distance = Math.abs((closestNote.y + 12.5) - targetLineY);
+                let hitQuality = 'Miss';
+                
+                if (distance < 30) hitQuality = 'Perfect';
+                else if (distance < 55) hitQuality = 'Great';
+                else if (distance < 80) hitQuality = 'Good';
+
+                if (hitQuality !== 'Miss') {
+                    handleJudgement(hitQuality, closestNote.noteData.type);
+                    hitSound.triggerAttackRelease("C6", "16n");
+
+                    if (closestNote.noteData.type === 'long') {
+                        closestNote.isHit = true;
+                        gameState.activeHolds[hitLane] = closestNote;
+                        closestNote.element.classList.add('held');
+                    } else {
+                        closestNote.isHit = true;
+                        closestNote.element.remove();
+                    }
+                }
+            }
+        }
+
+        function processRelease(releaseLane) {
+            const heldNote = gameState.activeHolds[releaseLane];
+            if (!heldNote) return;
+
+            const remainingHeight = heldNote.tailElement.offsetHeight;
+            const totalHeight = (Tone.Time(heldNote.noteData.holdDuration).toSeconds() * 1000) * noteDropSpeed;
+
+            if (remainingHeight < totalHeight * 0.2) handleJudgement('Perfect');
+            else if (remainingHeight < totalHeight * 0.5) handleJudgement('Great');
+            else handleJudgement('Good');
+
+            heldNote.element.remove();
+            heldNote.tailElement.remove();
+            gameState.activeHolds[releaseLane] = null;
+        }
+        
+        function handleJudgement(quality, type = 'tap') {
+            let scoreMultiplier = gameState.isFever ? 2 : 1;
+            
+            switch(quality) {
+                case 'Perfect':
+                    gameState.score += ((type === 'flick' ? 350 : 300) + gameState.combo) * scoreMultiplier;
+                    gameState.life = Math.min(MAX_LIFE, gameState.life + 5);
+                    gameState.fever = Math.min(MAX_FEVER, gameState.fever + 10);
+                    gameState.combo++;
+                    showFeedback('Perfect', '#ff66aa');
+                    break;
+                case 'Great':
+                    gameState.score += (200 + Math.floor(gameState.combo / 2)) * scoreMultiplier;
+                    gameState.life = Math.min(MAX_LIFE, gameState.life + 2);
+                    gameState.fever = Math.min(MAX_FEVER, gameState.fever + 5);
+                    gameState.combo++;
+                    showFeedback('Great', '#33ccff');
+                    break;
+                case 'Good':
+                    gameState.score += 100 * scoreMultiplier;
+                    gameState.fever = Math.min(MAX_FEVER, gameState.fever + 1);
+                    gameState.combo = 0;
+                    showFeedback('Good', '#f7b733');
+                    break;
+                case 'Miss':
+                    gameState.life -= 100;
+                    gameState.fever = 0;
+                    gameState.combo = 0;
+                    showFeedback('Miss', '#999999');
+                    break;
+            }
+            
+            if (gameState.fever >= MAX_FEVER && !gameState.isFever) {
+                startFeverTime();
+            }
+            
+            if (gameState.life <= 0) {
+                gameState.life = 0;
+                endGame(true);
+            }
+            updateUI();
+        }
+        
+        function startFeverTime() {
+            gameState.isFever = true;
+            UIElements.feverText.classList.add('show');
+            setTimeout(() => {
+                UIElements.feverText.classList.remove('show');
+            }, 1500);
+            
+            setTimeout(endFeverTime, 7000);
+        }
+        
+        function endFeverTime() {
+            gameState.isFever = false;
+            gameState.fever = 0;
+            updateUI();
+        }
+
+        function updateUI() {
+            UIElements.scoreDisplay.textContent = gameState.score;
+            UIElements.lifeBar.style.width = `${(gameState.life / MAX_LIFE) * 100}%`;
+            UIElements.feverBar.style.width = `${(gameState.fever / MAX_FEVER) * 100}%`;
+            
+            if (gameState.combo > 1) {
+                UIElements.comboDisplay.classList.remove('hidden');
+                UIElements.comboCountSpan.textContent = gameState.combo;
+                UIElements.comboDisplay.classList.add('popping');
+                setTimeout(() => UIElements.comboDisplay.classList.remove('popping'), 100);
+            } else {
+                UIElements.comboDisplay.classList.add('hidden');
+            }
+        }
+        
+        function showFeedback(text, color) {
+            UIElements.feedbackText.textContent = text;
+            UIElements.feedbackText.style.color = color;
+            UIElements.feedbackText.classList.add('show');
+            setTimeout(() => { UIElements.feedbackText.classList.remove('show'); }, 300);
+        }
+        
+        function endGame(isFail = false) {
+            if (gameState.isGameEnded) return;
+            gameState.isGameEnded = true; gameState.isPlaying = false;
+            transport.stop(); transport.cancel();
+            if (beatLoop) beatLoop.stop(0);
+            cancelAnimationFrame(gameState.animationFrameId);
+            
+            endFeverTime();
+            UIElements.gameContainer.classList.remove('fever-active');
+
+            if(isFail) {
+                UIElements.endTitle.textContent = "挑戰失敗...";
+                UIElements.endTitle.classList.add("fail");
+            } else {
+                UIElements.endTitle.textContent = "演出結束！";
+                UIElements.endTitle.classList.remove("fail");
+            }
+
+            UIElements.finalScoreDisplay.textContent = gameState.score;
+            UIElements.endScreen.classList.remove('hidden');
+            document.querySelectorAll('.note, .note-tail').forEach(el => el.remove());
+            gameState.notes = [];
+        }
+
+        const keyMapping = { 'd': 0, 'f': 1, 'j': 2, 'k': 3 };
+        document.addEventListener('keydown', (e) => {
+            if (!gameState.isPlaying) return;
+            const lane = keyMapping[e.key.toLowerCase()];
+            if (lane !== undefined && !UIElements.laneBtns[lane].classList.contains('key-pressed')) {
+                processHit(lane);
+                UIElements.laneBtns[lane].classList.add('key-pressed');
+            }
+        });
+        document.addEventListener('keyup', (e) => {
+            const lane = keyMapping[e.key.toLowerCase()];
+            if (lane !== undefined) {
+                processRelease(lane);
+                UIElements.laneBtns[lane].classList.remove('key-pressed');
+            }
+        });
+        
+        let isPointerDown = false;
+        let lastTouchedLane = -1;
+
+        const handlePreGameTouch = (laneButton) => {
+            if (!gameState.isPlaying) {
+                preGameTouchSound.triggerAttackRelease("A5", "32n");
+                laneButton.classList.add('key-pressed');
+                setTimeout(() => laneButton.classList.remove('key-pressed'), 100);
+            }
+        };
+        
+        document.addEventListener('mousedown', () => isPointerDown = true);
+        document.addEventListener('mouseup', () => isPointerDown = false);
+        document.addEventListener('touchstart', () => isPointerDown = true, { passive: true });
+        document.addEventListener('touchend', () => { isPointerDown = false; lastTouchedLane = -1; });
+
+        UIElements.gameContainer.addEventListener('touchmove', e => {
+            if (!isPointerDown) return;
+            const touch = e.touches[0];
+            const element = document.elementFromPoint(touch.clientX, touch.clientY);
+            if (element && element.classList.contains('lane-btn')) {
+                const currentLane = parseInt(element.dataset.lane, 10);
+                if (currentLane !== lastTouchedLane) {
+                    handlePreGameTouch(element);
+                    lastTouchedLane = currentLane;
+                }
+            }
+        }, { passive: true });
+
+        UIElements.laneBtns.forEach((btn, i) => {
+            btn.addEventListener('mousedown', () => gameState.isPlaying && processHit(i));
+            btn.addEventListener('mouseup', () => gameState.isPlaying && processRelease(i));
+            btn.addEventListener('touchstart', e => { if (gameState.isPlaying) { e.preventDefault(); processHit(i); }}, { passive: false });
+            btn.addEventListener('touchend', e => { if (gameState.isPlaying) { e.preventDefault(); processRelease(i); }});
+            
+            btn.addEventListener('mouseenter', () => {
+                if (isPointerDown) {
+                    handlePreGameTouch(btn);
+                }
+            });
+        });
+
+        UIElements.startBtn.addEventListener('click', startGame);
+        UIElements.restartBtn.addEventListener('click', startGame);
+    </script>
+</body>
+</html>
